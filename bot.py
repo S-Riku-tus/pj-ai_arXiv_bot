@@ -64,15 +64,13 @@ def fetch_arxiv_papers(tags):
     all_papers = {}
 
     for tag in tags:
-        # 昨日から今日までの間に出た論文を探す
-        yesterday = datetime.now() - timedelta(days=1)
-        date_filter = f"submittedDate:[{yesterday.strftime('%Y%m%d')}* TO *]"
-        query = f"cat:{tag} AND {date_filter}"
-        
         try:
+            # 日付フィルタなしで、最新の論文を取得
+            query = f"cat:{tag}"
+            
             search = arxiv.Search(
                 query=query,
-                max_results=1,
+                max_results=3,  # 各カテゴリで最大3件取得
                 sort_by=arxiv.SortCriterion.SubmittedDate,
                 sort_order=arxiv.SortOrder.Descending
             )
@@ -95,6 +93,8 @@ def fetch_arxiv_papers(tags):
                 formatted_papers.append(paper_info)
             
             all_papers[tag] = formatted_papers
+            # デバッグ出力を追加
+            print(f"Found {len(formatted_papers)} papers for category {tag}")
         except Exception as e:
             print(f"Error fetching papers for tag {tag}: {e}")
             all_papers[tag] = []
@@ -235,10 +235,16 @@ def get_latest_parent_paper_urls(channel_id):
             if msg.get('ts') == target_message['ts']:
                 continue  # 親投稿は除外
             text = msg.get('text', '')
-            # 論文のURLを抽出（フォーマット例："🔗 *URL :* http://arxiv.org/..."）
-            match = re.search(r"🔗 \*URL:\* (\S+)", text)
+            # 論文のURLを抽出（フォーマット例："🔗 *URL:* http://arxiv.org/..."）
+            # 正規表現パターンを柔軟にして、URL部分を確実に捕捉できるようにする
+            match = re.search(r"URL:.*?http[s]?://(?:arxiv\.org|[a-zA-Z0-9.-]+)/[^\s\">]+", text)
             if match:
-                paper_urls.append(match.group(1))
+                # URL部分だけを抽出
+                url_text = match.group(0)
+                url = re.search(r'http[s]?://[^\s">]+', url_text).group(0)
+                paper_urls.append(url)
+        
+        print(f"Found {len(paper_urls)} existing paper URLs in the latest thread")
         return set(paper_urls)
     except SlackApiError as e:
         print(f"Error fetching latest parent message: {e.response['error']}")
