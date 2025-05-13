@@ -6,7 +6,7 @@ import openai
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # .env の読み込み
 load_dotenv()
@@ -38,7 +38,7 @@ if not OPENAI_API_KEY:
     print("Warning: OPENAI_API_KEY is not set. "
           "Translation and summarization features will be disabled.")
 
-# OpenAI APIの設定
+# OpenAI APIの設定（v0.27.8向け）
 openai.api_key = OPENAI_API_KEY
 
 # 単一チャンネルIDの取得
@@ -127,19 +127,26 @@ Please provide:
 3. 3-5 key Q&A pairs that highlight the important aspects of this paper in Japanese
 """
 
-        # OpenAI APIを呼び出し
-        response = openai.chat.completions.create(
-            model="gpt-4",
+        # UTF-8でエンコードしたテキストのみを使用
+        safe_prompt = prompt.encode('utf-8', errors='ignore').decode('utf-8')
+        
+        # システムプロンプトも同様に処理
+        system_prompt = "You are a research assistant who specializes in translating and summarizing academic papers from English to Japanese."
+        safe_system_prompt = system_prompt.encode('utf-8', errors='ignore').decode('utf-8')
+        
+        # OpenAI APIを呼び出し（v0.27.8向け）
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # GPT-4の代わりにGPT-3.5-turboを使用
             messages=[
-                {"role": "system", "content": "You are a research assistant who specializes in translating and summarizing academic papers from English to Japanese."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": safe_system_prompt},
+                {"role": "user", "content": safe_prompt}
             ],
             temperature=0.3,
             max_tokens=1000
         )
         
-        # レスポンスから結果を取得
-        result = response.choices[0].message.content
+        # レスポンスから結果を取得（v0.27.8向け）
+        result = response['choices'][0]['message']['content']
         
         # 結果を解析（シンプルに3つのセクションに分割）
         sections = result.split("\n\n", 2)
@@ -168,26 +175,22 @@ Please provide:
 
 # Slack にメッセージを送信する関数
 def send_message_to_slack(channel_id, paper, thread_ts=None):
-    # 論文の翻訳・要約を取得
-    translation = translate_and_summarize_paper(paper)
-    
+    # 論文情報を直接使用
     # text フィールドも付与（フォールバック用）
-    text_fallback = f"{translation['translated_title']} - {paper['url']}"
+    text_fallback = f"{paper['title']} - {paper['url']}"
     
     blocks = [
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"📝 *論文タイトル:* {translation['translated_title']}\n"
-                        f"🔍 *原題:* {paper['title']}\n"
+                "text": f"📝 *論文タイトル:* {paper['title']}\n"
                         f"🏷️ *カテゴリ:* {paper['tag']}\n"
                         f"👨‍🔬 *著者:* {paper['authors']}\n"
                         f"📅 *公開日:* {paper['published']}\n"
                         f"🔗 *URL:* {paper['url']}\n"
                         f"📄 *PDF:* {paper['pdf_url']}\n\n"
-                        f"📚 *要約:* \n{translation['translated_summary']}\n\n"
-                        f"❓ *重要なポイント:* \n{translation['key_qa']}"
+                        f"📚 *要約:* \n{paper['summary'][:500]}...\n\n"
             }
         }
     ]
@@ -199,8 +202,8 @@ def send_message_to_slack(channel_id, paper, thread_ts=None):
             blocks=blocks,
             thread_ts=thread_ts
         )
-        print(f"Message sent: {response['message']['ts']}")
-        return response['message']['ts']
+        print(f"Message sent: {response['ts']}")
+        return response['ts']
     except SlackApiError as e:
         print(f"Error sending message: {e.response['error']}")
         return None
@@ -279,11 +282,11 @@ def notify_papers_to_slack():
     
     # 今日の新規親投稿を作成し、スレッドを開始
     try:
-        parent_message = client.chat_postMessage(
+        parent_response = client.chat_postMessage(
             channel=SLACK_CHANNEL_ID,
             text=f"📢 *最新のarXiv論文 - {datetime.now().strftime('%Y-%m-%d')}*"
         )
-        thread_ts = parent_message["ts"]
+        thread_ts = parent_response['ts']
         
         # すべてのタグの論文を1つのスレッドに投稿
         for tag, papers in papers_by_tag.items():
