@@ -30,7 +30,7 @@ def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {"tags": ["生成AI"]}
+    return {"tags": ["cs.AI"]}
 
 
 def save_config(data):
@@ -44,17 +44,37 @@ def set_tags():
     user_input = data.get("text", "").strip()
 
     if not user_input:
-        return jsonify({"text": "⚠️ 設定するタグを指定してください！"}), 200
+        return jsonify({"text": "⚠️ 設定するarXivカテゴリを指定してください！例: cs.AI, cs.CL, cs.CV"}), 200
 
     new_tags = [tag.strip() for tag in user_input.split(",")]
     config = load_config()
     config["tags"] = new_tags
     save_config(config)
 
-    commit_and_push_changes()  # 🔹 GitHub に変更を push
+    commit_and_push_changes()  # GitHub に変更を push
 
-    response_text = f"✅ `TAGS` を更新しました！\n現在のタグ: `{', '.join(new_tags)}`"
+    response_text = f"✅ arXivカテゴリを更新しました！\n現在のカテゴリ: `{', '.join(new_tags)}`"
     return jsonify({"text": response_text}), 200
+
+
+@app.route("/slack/help", methods=["POST"])
+def help_command():
+    help_text = """
+*arXiv Slack Bot コマンド一覧*
+
+`/set_tags cs.AI, cs.CL, cs.CV` - 通知するarXivカテゴリを設定します
+
+*主要なarXivカテゴリ*
+• `cs.AI` - 人工知能
+• `cs.CL` - 計算言語学と自然言語処理
+• `cs.CV` - コンピュータビジョンとパターン認識
+• `cs.LG` - 機械学習
+• `cs.NE` - ニューラルネットワーク
+• `cs.RO` - ロボティクス
+
+完全なリストは <https://arxiv.org/category_taxonomy|arXivのカテゴリ一覧> を参照してください。
+"""
+    return jsonify({"text": help_text}), 200
 
 
 if __name__ == "__main__":

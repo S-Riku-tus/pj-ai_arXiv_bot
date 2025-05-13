@@ -1,8 +1,7 @@
-# Qiita Slack Bot
+# arXiv Slack Bot
 
-このプロジェクトは、Qiitaから生成AI関連の記事を定期的にSlackに通知するボットです。
-また、通知された記事を自動的にNotionにまとめる機能も追加されています。
-※実際の通知は、指定した時間の数分～30分ほど遅れて来ます。
+このプロジェクトは、arXivから特定のカテゴリの最新論文を定期的にSlackに通知するボットです。
+OpenAIのAPIを使用して、論文の翻訳と要約を行い、日本語で通知します。
 
 ## インストール
 
@@ -10,7 +9,6 @@
 
 ```bash
 pip install -r requirements.txt
-
 ```
 
 ## 環境設定
@@ -19,23 +17,30 @@ pip install -r requirements.txt
 
 ```
 SLACK_TOKEN=xoxb-your-slack-token
-API_TOKEN=your-qiita-api-token
-SLACK_CHANNELS=生成AI:C12345678,機械学習:C87654321
+OPENAI_API_KEY=your-openai-api-key
+SLACK_CHANNELS=cs.AI:C12345678,cs.LG:C87654321
 
 # Notion連携のための設定（オプション）
-ENABLE_NOTION=true
-NOTION_TOKEN=secret_your_notion_integration_token
-NOTION_PAGE_ID=your_notion_parent_page_id
+ENABLE_NOTION=false
 ```
 
-### Notion連携の設定方法
+### arXivのカテゴリについて
 
-1. [Notion Developers](https://developers.notion.com/)にアクセスし、新しいインテグレーションを作成
-2. インテグレーションのシークレットトークンを取得し、`NOTION_TOKEN`に設定
-3. Notionで記事をまとめたいページを作成し、そのページIDを`NOTION_PAGE_ID`に設定
-   - ページIDはページのURLから取得できます: `https://www.notion.so/workspace/[ページID]?v=...`
-4. 作成したインテグレーションをページに接続（ページの「・・・」→「接続を追加」から）
-5. `.env`ファイルの`ENABLE_NOTION`を`true`に設定
+arXivの主なカテゴリには以下のようなものがあります：
+
+- `cs.AI` - 人工知能
+- `cs.CL` - 計算言語学と自然言語処理
+- `cs.CV` - コンピュータビジョンとパターン認識
+- `cs.LG` - 機械学習
+- `cs.NE` - ニューラルネットワーク
+- `cs.RO` - ロボティクス
+
+完全なリストは[arXivのカテゴリ一覧](https://arxiv.org/category_taxonomy)を参照してください。
+
+### OpenAI APIの設定
+
+1. [OpenAI Platform](https://platform.openai.com/)からアカウントを作成し、APIキーを取得
+2. 取得したAPIキーを`.env`ファイルの`OPENAI_API_KEY`に設定
 
 ## 使い方
 
@@ -43,6 +48,18 @@ NOTION_PAGE_ID=your_notion_parent_page_id
 python bot.py
 ```
 
-実行すると、設定したタグの最新Qiita記事をSlackに通知し、同時にNotionページに未読記事をまとめます。
+実行すると、設定したカテゴリの最新arXiv論文をSlackに通知します。論文のタイトル、著者、要約が日本語に翻訳され、重要なポイントがQ&A形式で提供されます。
 
-Notionページには、タグごとにテーブル形式で記事がまとめられ、タイトル、URL、LGTM数が記録されます。
+### Slackコマンドの設定
+
+Slackのスラッシュコマンドを設定して、通知するarXivのカテゴリを変更できます。
+
+1. [Slack API](https://api.slack.com/apps)から新しいアプリを作成
+2. 「Slash Commands」を有効にし、`/set_tags`コマンドを追加
+3. Request URLを`https://あなたのサーバー/slack/set_tags`に設定
+4. Flaskサーバーを起動：`python slack_commands.py`
+
+コマンドの使用例:
+```
+/set_tags cs.AI, cs.CL, cs.CV
+```
