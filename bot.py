@@ -3,6 +3,7 @@ import json
 import re
 import arxiv
 import openai
+import google.generativeai as genai
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from dotenv import load_dotenv
@@ -19,14 +20,19 @@ def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {"tags": ["AI", "generative AI"]}  # デフォルト値
+    return {"tags": ["cs.AI", "cs.LG", "cs.CL"]}  # デフォルト値
 
 # 設定の読み込み
 config = load_config()
 TAGS = config["tags"]
 
+# タグの優先順位（配列の順番が優先順位を表す）
+TAG_PRIORITY = TAGS.copy()  # 設定ファイルの順序をそのまま優先順位として使用
+
 SLACK_TOKEN = os.getenv("SLACK_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+AI_SERVICE = os.getenv("AI_SERVICE", "openai").lower()  # デフォルトはOpenAI
 SLACK_CHANNELS = os.getenv("SLACK_CHANNELS", "")
 SLACK_CHANNEL_ID = None
 ENABLE_NOTION = os.getenv("ENABLE_NOTION", "false").lower() == "true"
@@ -34,12 +40,16 @@ ENABLE_NOTION = os.getenv("ENABLE_NOTION", "false").lower() == "true"
 if not SLACK_TOKEN:
     raise ValueError("SLACK_TOKEN environment variable must be set.")
 
-if not OPENAI_API_KEY:
-    print("Warning: OPENAI_API_KEY is not set. "
-          "Translation and summarization features will be disabled.")
-
 # OpenAI APIの設定（v0.27.8向け）
-openai.api_key = OPENAI_API_KEY
+if AI_SERVICE == "openai" and OPENAI_API_KEY:
+    openai.api_key = OPENAI_API_KEY
+    print("Using OpenAI API for translation and summarization")
+# Gemini APIの設定
+elif AI_SERVICE == "gemini" and GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    print("Using Gemini API for translation and summarization")
+else:
+    print("Warning: No valid AI API key set. Translation features will be disabled.")
 
 # 単一チャンネルIDの取得
 if SLACK_CHANNELS:
@@ -61,16 +71,17 @@ client = WebClient(token=SLACK_TOKEN)
 
 # arXiv から論文を取得する関数
 def fetch_arxiv_papers(tags):
+    """各タグにつき1つずつ最新の論文を取得する"""
     all_papers = {}
 
     for tag in tags:
         try:
-            # 日付フィルタなしで、最新の論文を取得
+            # 日付フィルタなしで、最新の論文を取得（各タグ1件のみ）
             query = f"cat:{tag}"
             
             search = arxiv.Search(
                 query=query,
-                max_results=3,  # 各カテゴリで最大3件取得
+                max_results=1,  # 各カテゴリで最大1件取得
                 sort_by=arxiv.SortCriterion.SubmittedDate,
                 sort_order=arxiv.SortOrder.Descending
             )
@@ -102,7 +113,7 @@ def fetch_arxiv_papers(tags):
     return all_papers
 
 # OpenAI APIを使って論文を翻訳・要約する関数
-def translate_and_summarize_paper(paper):
+def translate_and_summarize_paper_openai(paper):
     if not OPENAI_API_KEY:
         return {
             "translated_title": paper["title"],
@@ -166,34 +177,126 @@ Please provide:
             "key_qa": key_qa
         }
     except Exception as e:
-        print(f"Error translating and summarizing paper: {e}")
+        print(f"Error translating and summarizing paper with OpenAI: {e}")
         return {
             "translated_title": paper["title"],
             "translated_summary": f"翻訳・要約中にエラーが発生しました: {str(e)}",
             "key_qa": "重要なQ&Aは利用できません。"
         }
 
+# Gemini APIを使って論文を翻訳・要約する関数
+def translate_and_summarize_paper_gemini(paper):
+    if not GEMINI_API_KEY:
+        return {
+            "translated_title": paper["title"],
+            "translated_summary": "Gemini API key is not set. Translation unavailable.",
+            "key_qa": "Gemini API key is not set. Key Q&A unavailable."
+        }
+    
+    try:
+        # プロンプトを作成
+        prompt = f"""You are a summarization assistant. Given an academic paper content, generate a title, a concise summary, and a set of key Q&A that capture the essential points.
+
+Paper Title: {paper['title']}
+Authors: {paper['authors']}
+Published: {paper['published']}
+
+Abstract:
+{paper['summary']}
+
+Please provide:
+1. Japanese title translation
+2. Japanese summary in 400-600 characters
+3. 3-5 key Q&A pairs that highlight the important aspects of this paper in Japanese
+"""
+
+        # Gemini APIを呼び出し
+        model = genai.GenerativeModel('gemini-2.0-flash-lite')
+        response = model.generate_content(prompt)
+        
+        # レスポンスから結果を取得
+        result = response.text
+        
+        # 結果を解析（シンプルに3つのセクションに分割）
+        sections = result.split("\n\n", 2)
+        
+        if len(sections) >= 3:
+            translated_title = sections[0].replace("Japanese title translation: ", "").strip()
+            translated_summary = sections[1].replace("Japanese summary: ", "").strip()
+            key_qa = sections[2].strip()
+        else:
+            translated_title = paper["title"]
+            translated_summary = "要約の生成に失敗しました。"
+            key_qa = "重要なQ&Aの生成に失敗しました。"
+        
+        return {
+            "translated_title": translated_title,
+            "translated_summary": translated_summary,
+            "key_qa": key_qa
+        }
+    except Exception as e:
+        print(f"Error translating and summarizing paper with Gemini: {e}")
+        return {
+            "translated_title": paper["title"],
+            "translated_summary": f"翻訳・要約中にエラーが発生しました: {str(e)}",
+            "key_qa": "重要なQ&Aは利用できません。"
+        }
+
+# 適切なAIサービスを使って論文を翻訳・要約する関数
+def translate_and_summarize_paper(paper):
+    if AI_SERVICE == "gemini" and GEMINI_API_KEY:
+        return translate_and_summarize_paper_gemini(paper)
+    elif AI_SERVICE == "openai" and OPENAI_API_KEY:
+        return translate_and_summarize_paper_openai(paper)
+    else:
+        # 翻訳機能が利用できない場合は元の情報を返す
+        return {
+            "translated_title": paper["title"],
+            "translated_summary": paper["summary"][:500] + "...",
+            "key_qa": "AI translation service is not available."
+        }
+
 # Slack にメッセージを送信する関数
 def send_message_to_slack(channel_id, paper, thread_ts=None):
-    # 論文情報を直接使用
-    # text フィールドも付与（フォールバック用）
-    text_fallback = f"{paper['title']} - {paper['url']}"
-    
-    blocks = [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"📝 *論文タイトル:* {paper['title']}\n"
-                        f"🏷️ *カテゴリ:* {paper['tag']}\n"
-                        f"👨‍🔬 *著者:* {paper['authors']}\n"
-                        f"📅 *公開日:* {paper['published']}\n"
-                        f"🔗 *URL:* {paper['url']}\n"
-                        f"📄 *PDF:* {paper['pdf_url']}\n\n"
-                        f"📚 *要約:* \n{paper['summary'][:500]}...\n\n"
+    # 論文の翻訳・要約を取得
+    try:
+        translation = translate_and_summarize_paper(paper)
+        
+        # text フィールドも付与（フォールバック用）
+        text_fallback = f"{translation['translated_title']} - {paper['url']}"
+        
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"【タイトル\n{translation['translated_title']}"
+                            f"【title\n{paper['title']}"
+                            f"【公開日\n{paper['published']}"
+                            f"【URL\n{paper['url']}"
+                            f"【重要なポイント】\n{translation['key_qa']}"
+                            f"【要約】\n{translation['translated_summary']}"
+                }
             }
-        }
-    ]
+        ]
+    except Exception as e:
+        print(f"Error preparing message: {e}")
+        # エラーが発生した場合は元の論文情報のみを表示
+        text_fallback = f"{paper['title']} - {paper['url']}"
+        
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"【タイトル\n{translation['translated_title']}"
+                            f"【title\n{paper['title']}"
+                            f"【公開日\n{paper['published']}"
+                            f"【URL\n{paper['url']}"
+                            f"【要約】\n{translation['translated_summary']}"
+                }
+            }
+        ]
     
     try:
         response = client.chat_postMessage(
@@ -262,6 +365,23 @@ def update_tags(new_tags):
         json.dump(config, f, ensure_ascii=False, indent=4)
     return TAGS
 
+# 優先度に基づいて最適な論文を選択する関数
+def select_best_paper(papers_by_tag, tag_priority):
+    """
+    優先順位の高いカテゴリから順に論文を探し、最も優先度の高い論文を返す
+    
+    Args:
+        papers_by_tag (dict): タグごとの論文リスト
+        tag_priority (list): タグの優先順位（高い順）
+    
+    Returns:
+        dict or None: 最適な論文、なければNone
+    """
+    for tag in tag_priority:
+        if tag in papers_by_tag and papers_by_tag[tag]:
+            return papers_by_tag[tag][0]  # 各タグの最初の論文を返す
+    return None
+
 # arXiv論文をSlackに通知する関数
 def notify_papers_to_slack():
     if not SLACK_CHANNEL_ID:
@@ -280,6 +400,18 @@ def notify_papers_to_slack():
     # 最新の親投稿から投稿された論文のURLを取得
     latest_paper_urls = get_latest_parent_paper_urls(SLACK_CHANNEL_ID)
     
+    # 優先順位に基づいて最適な論文を選択
+    best_paper = select_best_paper(papers_by_tag, TAG_PRIORITY)
+    
+    if not best_paper:
+        print("No suitable paper found after priority filtering.")
+        return
+    
+    # 選択した論文が既に通知済みかチェック
+    if best_paper["url"] in latest_paper_urls:
+        print(f"論文 {best_paper['id']} は既に通知済みです。スキップします。")
+        return
+    
     # 今日の新規親投稿を作成し、スレッドを開始
     try:
         parent_response = client.chat_postMessage(
@@ -288,18 +420,12 @@ def notify_papers_to_slack():
         )
         thread_ts = parent_response['ts']
         
-        # すべてのタグの論文を1つのスレッドに投稿
-        for tag, papers in papers_by_tag.items():
-            for paper in papers:
-                if paper["url"] in latest_paper_urls:
-                    print(f"論文 {paper['id']} は既に通知済みです。スキップします。")
-                    continue
-                
-                send_message_to_slack(
-                    channel_id=SLACK_CHANNEL_ID,
-                    paper=paper,
-                    thread_ts=thread_ts
-                )
+        # 選択した論文を通知
+        send_message_to_slack(
+            channel_id=SLACK_CHANNEL_ID,
+            paper=best_paper,
+            thread_ts=thread_ts
+        )
             
     except SlackApiError as e:
         print(f"Error sending parent message: {e.response['error']}")
