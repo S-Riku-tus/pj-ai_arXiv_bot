@@ -28,6 +28,7 @@ TAGS = config["tags"]
 SLACK_TOKEN = os.getenv("SLACK_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SLACK_CHANNELS = os.getenv("SLACK_CHANNELS", "")
+SLACK_CHANNEL_ID = None
 ENABLE_NOTION = os.getenv("ENABLE_NOTION", "false").lower() == "true"
 
 if not SLACK_TOKEN:
@@ -40,13 +41,20 @@ if not OPENAI_API_KEY:
 # OpenAI APIの設定
 openai.api_key = OPENAI_API_KEY
 
-# タグごとのチャンネルIDマッピング
-TAG_CHANNEL_MAP = {}
+# 単一チャンネルIDの取得
 if SLACK_CHANNELS:
     pairs = SLACK_CHANNELS.split(",")
     for pair in pairs:
-        tag, channel_id = pair.split(":")
-        TAG_CHANNEL_MAP[tag.strip()] = channel_id.strip()
+        parts = pair.split(":")
+        if len(parts) == 2:
+            key, channel_id = parts
+            if key.strip() == "all" or len(pairs) == 1:
+                SLACK_CHANNEL_ID = channel_id.strip()
+                break
+
+if not SLACK_CHANNEL_ID:
+    print("Warning: No valid Slack channel ID found. "
+          "Please set SLACK_CHANNELS environment variable.")
 
 # Slack クライアントの作成
 client = WebClient(token=SLACK_TOKEN)
@@ -57,7 +65,7 @@ def fetch_arxiv_papers(tags):
 
     for tag in tags:
         # 昨日から今日までの間に出た論文を探す
-        yesterday = datetime.now() - timedelta(days=100)
+        yesterday = datetime.now() - timedelta(days=1)
         date_filter = f"submittedDate:[{yesterday.strftime('%Y%m%d')}* TO *]"
         query = f"cat:{tag} AND {date_filter}"
         
@@ -81,7 +89,8 @@ def fetch_arxiv_papers(tags):
                     "authors": ", ".join([author.name for author in paper.authors]),
                     "published": paper.published.strftime("%Y-%m-%d"),
                     "summary": paper.summary,
-                    "pdf_url": paper.pdf_url
+                    "pdf_url": paper.pdf_url,
+                    "tag": tag  # タグ情報を追加
                 }
                 formatted_papers.append(paper_info)
             
@@ -120,7 +129,7 @@ Please provide:
 
         # OpenAI APIを呼び出し
         response = openai.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are a research assistant who specializes in translating and summarizing academic papers from English to Japanese."},
                 {"role": "user", "content": prompt}
@@ -172,9 +181,11 @@ def send_message_to_slack(channel_id, paper, thread_ts=None):
                 "type": "mrkdwn",
                 "text": f"📝 *論文タイトル:* {translation['translated_title']}\n"
                         f"🔍 *原題:* {paper['title']}\n"
+                        f"🏷️ *カテゴリ:* {paper['tag']}\n"
                         f"👨‍🔬 *著者:* {paper['authors']}\n"
                         f"📅 *公開日:* {paper['published']}\n"
                         f"🔗 *URL:* {paper['url']}\n"
+                        f"📄 *PDF:* {paper['pdf_url']}\n\n"
                         f"📚 *要約:* \n{translation['translated_summary']}\n\n"
                         f"❓ *重要なポイント:* \n{translation['key_qa']}"
             }
@@ -244,42 +255,45 @@ def update_tags(new_tags):
 
 # arXiv論文をSlackに通知する関数
 def notify_papers_to_slack():
+    if not SLACK_CHANNEL_ID:
+        print("❌ Error: Slack channel ID is not set.")
+        return
+        
     papers_by_tag = fetch_arxiv_papers(TAGS)
     
-    for tag, papers in papers_by_tag.items():
-        if not papers:
-            print(f"No papers found for tag: {tag}")
-            continue
+    # 今日の記事が見つかったかどうか
+    has_papers = any(len(papers) > 0 for papers in papers_by_tag.values())
+    
+    if not has_papers:
+        print("No papers found for any tag.")
+        return
+    
+    # 最新の親投稿から投稿された論文のURLを取得
+    latest_paper_urls = get_latest_parent_paper_urls(SLACK_CHANNEL_ID)
+    
+    # 今日の新規親投稿を作成し、スレッドを開始
+    try:
+        parent_message = client.chat_postMessage(
+            channel=SLACK_CHANNEL_ID,
+            text=f"📢 *最新のarXiv論文 - {datetime.now().strftime('%Y-%m-%d')}*"
+        )
+        thread_ts = parent_message["ts"]
         
-        slack_channel_id = TAG_CHANNEL_MAP.get(tag)
-        if not slack_channel_id:
-            print(f"❌ Error: チャンネルIDが見つかりません: {tag}")
-            continue
-        
-        try:
-            # 最新の親投稿から投稿された論文のURLを取得
-            latest_paper_urls = get_latest_parent_paper_urls(slack_channel_id)
-            
-            # 今日の新規親投稿を作成し、スレッドを開始
-            parent_message = client.chat_postMessage(
-                channel=slack_channel_id,
-                text=f"📢 *最新のarXiv論文 - #{tag}*"
-            )
-            thread_ts = parent_message["ts"]
-            
+        # すべてのタグの論文を1つのスレッドに投稿
+        for tag, papers in papers_by_tag.items():
             for paper in papers:
                 if paper["url"] in latest_paper_urls:
                     print(f"論文 {paper['id']} は既に通知済みです。スキップします。")
                     continue
                 
                 send_message_to_slack(
-                    channel_id=slack_channel_id,
+                    channel_id=SLACK_CHANNEL_ID,
                     paper=paper,
                     thread_ts=thread_ts
                 )
             
-        except SlackApiError as e:
-            print(f"Error sending parent message for {tag} in {slack_channel_id}: {e.response['error']}")
+    except SlackApiError as e:
+        print(f"Error sending parent message: {e.response['error']}")
 
 if __name__ == "__main__":
     notify_papers_to_slack()
