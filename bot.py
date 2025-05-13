@@ -57,7 +57,7 @@ def fetch_arxiv_papers(tags):
 
     for tag in tags:
         # 昨日から今日までの間に出た論文を探す
-        yesterday = datetime.now() - timedelta(days=1)
+        yesterday = datetime.now() - timedelta(days=100)
         date_filter = f"submittedDate:[{yesterday.strftime('%Y%m%d')}* TO *]"
         query = f"cat:{tag} AND {date_filter}"
         
@@ -120,7 +120,7 @@ Please provide:
 
         # OpenAI APIを呼び出し
         response = openai.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a research assistant who specializes in translating and summarizing academic papers from English to Japanese."},
                 {"role": "user", "content": prompt}
@@ -175,7 +175,6 @@ def send_message_to_slack(channel_id, paper, thread_ts=None):
                         f"👨‍🔬 *著者:* {paper['authors']}\n"
                         f"📅 *公開日:* {paper['published']}\n"
                         f"🔗 *URL:* {paper['url']}\n"
-                        f"📄 *PDF:* {paper['pdf_url']}\n\n"
                         f"📚 *要約:* \n{translation['translated_summary']}\n\n"
                         f"❓ *重要なポイント:* \n{translation['key_qa']}"
             }
