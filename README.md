@@ -1,7 +1,7 @@
 # arXiv Slack Bot
 
 このプロジェクトは、arXivから特定のカテゴリの最新論文を定期的にSlackに通知するボットです。
-OpenAIのAPIを使用して、論文の翻訳と要約を行い、日本語で通知します。
+優先順位の高いカテゴリから最も価値のある1つの論文を選び、AI（OpenAIまたはGemini）を使用して日本語に翻訳・要約します。
 
 ## インストール
 
@@ -16,11 +16,22 @@ pip install -r requirements.txt
 以下の環境変数を `.env` ファイルに設定する必要があります：
 
 ```
+# Slackトークン（必須）
 SLACK_TOKEN=xoxb-your-slack-token
-OPENAI_API_KEY=your-openai-api-key
-SLACK_CHANNELS=cs.AI:C12345678,cs.LG:C87654321
 
-# Notion連携のための設定（オプション）
+# 通知先チャンネル（必須）
+SLACK_CHANNELS=all:C12345678
+
+# 選択するAIサービス: "openai" または "gemini"（デフォルトはopenai）
+AI_SERVICE=openai
+
+# OpenAI APIキー（AI_SERVICE=openaiの場合に必要）
+OPENAI_API_KEY=your-openai-api-key
+
+# Gemini APIキー（AI_SERVICE=geminiの場合に必要）
+GEMINI_API_KEY=your-gemini-api-key
+
+# Notion連携（オプション）
 ENABLE_NOTION=false
 ```
 
@@ -37,10 +48,30 @@ arXivの主なカテゴリには以下のようなものがあります：
 
 完全なリストは[arXivのカテゴリ一覧](https://arxiv.org/category_taxonomy)を参照してください。
 
-### OpenAI APIの設定
+### カテゴリの優先順位
 
+configファイル内のタグの順序が優先順位を表します。例えば、デフォルト設定の場合：
+
+```json
+{
+    "tags": ["cs.AI", "cs.LG", "cs.CL"]
+}
+```
+
+この設定では、cs.AIが最も優先度が高く、次にcs.LG、最後にcs.CLとなります。
+ボットは各カテゴリから最新の1つの論文を取得し、優先度の高いものから順に選択して1つの論文だけを通知します。
+
+### APIキーの設定
+
+#### OpenAI API
 1. [OpenAI Platform](https://platform.openai.com/)からアカウントを作成し、APIキーを取得
 2. 取得したAPIキーを`.env`ファイルの`OPENAI_API_KEY`に設定
+3. `AI_SERVICE=openai`に設定
+
+#### Gemini API
+1. [Google AI Studio](https://makersuite.google.com/app/apikey)からAPIキーを取得
+2. 取得したAPIキーを`.env`ファイルの`GEMINI_API_KEY`に設定
+3. `AI_SERVICE=gemini`に設定
 
 ## 使い方
 
@@ -48,7 +79,7 @@ arXivの主なカテゴリには以下のようなものがあります：
 python bot.py
 ```
 
-実行すると、設定したカテゴリの最新arXiv論文をSlackに通知します。論文のタイトル、著者、要約が日本語に翻訳され、重要なポイントがQ&A形式で提供されます。
+実行すると、設定したカテゴリの最新arXiv論文を優先順位に従って1つだけSlackに通知します。論文のタイトル、著者、要約が日本語に翻訳され、重要なポイントがQ&A形式で提供されます。
 
 ### Slackコマンドの設定
 
@@ -62,4 +93,12 @@ Slackのスラッシュコマンドを設定して、通知するarXivのカテ�
 コマンドの使用例:
 ```
 /set_tags cs.AI, cs.CL, cs.CV
+```
+
+### 定期実行の設定
+
+以下のようにcronを設定して、毎朝自動実行することができます：
+
+```
+0 8 * * * cd /path/to/project && python bot.py
 ```
