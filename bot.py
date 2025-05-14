@@ -6,11 +6,11 @@ import openai
 import google.generativeai as genai
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from datetime import datetime
 
-# .env の読み込み
-load_dotenv()
+# .env の読み込み（強制的に再読み込み）
+load_dotenv(find_dotenv(), override=True)
 
 # 設定ファイルのパス（従来の設定ファイルのみ使用）
 CONFIG_FILE = "config.json"
@@ -104,10 +104,18 @@ TAG_PRIORITY = TAGS.copy()  # 設定ファイルの順序をそのまま優先�
 SLACK_TOKEN = os.getenv("SLACK_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-AI_SERVICE = os.getenv("AI_SERVICE", "openai").lower()  # デフォルトはOpenAI
+AI_SERVICE = os.getenv("AI_SERVICE", "openai")
+# 値に空白やコメントが含まれている場合を考慮してトリム
+if AI_SERVICE:
+    # 空白やコメントを削除
+    AI_SERVICE = AI_SERVICE.split('#')[0].strip().lower()
 SLACK_CHANNELS = os.getenv("SLACK_CHANNELS", "")
 SLACK_CHANNEL_ID = None
 ENABLE_NOTION = os.getenv("ENABLE_NOTION", "false").lower() == "true"
+
+# 環境変数の値を診断のために出力
+print(f"AI_SERVICE: '{AI_SERVICE}'")
+print(f"GEMINI_API_KEY: '{GEMINI_API_KEY[:5]}...(省略)...'")
 
 if not SLACK_TOKEN:
     raise ValueError("SLACK_TOKEN environment variable must be set.")
@@ -121,6 +129,8 @@ elif AI_SERVICE == "gemini" and GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     print("Using Gemini API for translation and summarization")
 else:
+    print("AI_SERVICE", AI_SERVICE)
+    print("GEMINI_API_KEY", GEMINI_API_KEY)
     print("Warning: No valid AI API key set. Translation features will be disabled.")
 
 # 単一チャンネルIDの取得
