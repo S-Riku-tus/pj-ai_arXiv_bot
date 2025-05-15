@@ -115,7 +115,10 @@ ENABLE_NOTION = os.getenv("ENABLE_NOTION", "false").lower() == "true"
 
 # 環境変数の値を診断のために出力
 print(f"AI_SERVICE: '{AI_SERVICE}'")
-print(f"GEMINI_API_KEY: '{GEMINI_API_KEY[:5]}...(省略)...'")
+if GEMINI_API_KEY:
+    print(f"GEMINI_API_KEY: '{GEMINI_API_KEY[:5]}...(省略)...'")
+else:
+    print("GEMINI_API_KEY: Not set")
 
 if not SLACK_TOKEN:
     raise ValueError("SLACK_TOKEN environment variable must be set.")
