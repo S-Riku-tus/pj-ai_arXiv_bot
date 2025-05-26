@@ -104,7 +104,7 @@ TAG_PRIORITY = TAGS.copy()  # 設定ファイルの順序をそのまま優先�
 SLACK_TOKEN = os.getenv("SLACK_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-AI_SERVICE = os.getenv("AI_SERVICE", "openai")
+AI_SERVICE = os.getenv("AI_SERVICE", "gemini")
 # 値に空白やコメントが含まれている場合を考慮してトリム
 if AI_SERVICE:
     # 空白やコメントを削除
