@@ -15,6 +15,7 @@ load_dotenv(find_dotenv(), override=True)
 # 設定ファイルのパス（従来の設定ファイルのみ使用）
 CONFIG_FILE = "config.json"
 
+
 # LaTeX数式をスラック表示用にフォーマットする関数
 def format_latex_for_slack(text):
     """
@@ -64,6 +65,7 @@ def format_latex_for_slack(text):
     
     return text
 
+
 # 数字を上付き文字に変換するヘルパー関数
 def _get_superscript(num_str):
     """数字を上付き文字に変換する"""
@@ -87,12 +89,14 @@ def _get_superscript(num_str):
             result += digit
     return result
 
+
 # 設定ファイルを読み込む関数
 def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {"tags": ["cs.AI", "cs.LG", "cs.CL"]}  # デフォルト値
+
 
 # 設定の読み込み
 config = load_config()
@@ -164,6 +168,7 @@ def fetch_arxiv_papers(tags):
             # 日付フィルタなしで、最新の論文を取得（各タグ1件のみ）
             query = f"cat:{tag}"
             
+            # 最新バージョンのarxivライブラリに対応
             search = arxiv.Search(
                 query=query,
                 max_results=1,  # 各カテゴリで最大1件取得
@@ -175,13 +180,13 @@ def fetch_arxiv_papers(tags):
             formatted_papers = []
             
             for paper in papers:
-                # 論文情報を整形
+                # 論文情報を整形（最新バージョンに対応）
                 paper_info = {
-                    "id": paper.get_short_id(),
+                    "id": paper.entry_id.split('/')[-1],  # get_short_id()の代替
                     "title": paper.title,
                     "url": paper.entry_id,
                     "authors": ", ".join([author.name for author in paper.authors]),
-                    "published": paper.published.strftime("%Y-%m-%d"),
+                    "published": paper.published.strftime("%Y-%m-%d") if paper.published else "Unknown",
                     "summary": paper.summary,
                     "pdf_url": paper.pdf_url,
                     "tag": tag  # タグ情報を追加
