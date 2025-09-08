@@ -38,15 +38,7 @@ class Config:
     def _load_environment_variables(self):
         """環境変数を読み込む"""
         self.slack_token = os.getenv("SLACK_TOKEN")
-        self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.gemini_api_key = os.getenv("GEMINI_API_KEY")
-        
-        # AI_SERVICEの設定
-        ai_service = os.getenv("AI_SERVICE", "gemini")
-        if ai_service:
-            # 空白やコメントを削除
-            ai_service = ai_service.split('#')[0].strip().lower()
-        self.ai_service = ai_service
         
         # Slackチャンネル設定
         slack_channels = os.getenv("SLACK_CHANNELS", "")
@@ -78,19 +70,12 @@ class Config:
             print("Warning: No valid Slack channel ID found. "
                   "Please set SLACK_CHANNELS environment variable.")
         
-        # AI API設定の診断
-        print(f"AI_SERVICE: '{self.ai_service}'")
+        # Gemini API設定の診断
         if self.gemini_api_key:
             print(f"GEMINI_API_KEY: '{self.gemini_api_key[:5]}...(省略)...'")
         else:
             print("GEMINI_API_KEY: Not set")
-        
-        if self.ai_service == "openai" and not self.openai_api_key:
-            print("Warning: OpenAI API key is not set for OpenAI service.")
-        elif self.ai_service == "gemini" and not self.gemini_api_key:
-            print("Warning: Gemini API key is not set for Gemini service.")
-        elif not self.openai_api_key and not self.gemini_api_key:
-            print("Warning: No valid AI API key set. Translation features will be disabled.")
+            print("Warning: Gemini API key is not set. Translation features will be disabled.")
     
     def update_tags(self, new_tags: List[str]) -> List[str]:
         """タグを更新する"""
@@ -106,7 +91,5 @@ class Config:
     def get_ai_service_config(self) -> dict:
         """AIサービス設定を取得"""
         return {
-            "service": self.ai_service,
-            "openai_api_key": self.openai_api_key,
             "gemini_api_key": self.gemini_api_key
         }

@@ -3,7 +3,6 @@
 LaTeX数式のSlack表示用フォーマットなど
 """
 import re
-from typing import str
 
 
 def format_latex_for_slack(text: str) -> str:
