@@ -26,4 +26,4 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AI_SERVICE: ${{ secrets.AI_SERVICE }}
-        run: python bot.py
+        run: python main.py
