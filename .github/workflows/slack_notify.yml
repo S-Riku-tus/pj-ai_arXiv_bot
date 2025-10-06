@@ -2,7 +2,7 @@ name: Qiita Slack Notifier
 
 on:
   schedule:
-    - cron: "10 23 * * *"  # 毎日 08:10 JST (UTC の 23:10)
+    - cron: "20 23 * * *"  # 毎日 08:10 JST (UTC の 23:10)
 
 jobs:
   notify:
